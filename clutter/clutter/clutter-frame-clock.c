@@ -86,6 +86,7 @@ typedef struct _Frame
   int64_t flip_time_us;
   int64_t dispatch_interval_us;
   ClutterFrameInfoFlag presentation_flags;
+  ClutterFrameHint hints;
   gboolean has_next_presentation_time;
   gboolean got_measurements;
 } Frame;
@@ -1228,12 +1229,14 @@ frame_clock_source_dispatch (GSource     *source,
 }
 
 void
-clutter_frame_clock_record_flip_time (ClutterFrameClock *frame_clock,
-                                      int64_t            flip_time_us)
+clutter_frame_clock_record_flip (ClutterFrameClock *frame_clock,
+                                 int64_t            flip_time_us,
+                                 ClutterFrameHint   hints)
 {
   Frame *new_frame = frame_clock->prev_dispatch;
 
   new_frame->flip_time_us = flip_time_us;
+  new_frame->hints = hints;
 }
 
 GString *
