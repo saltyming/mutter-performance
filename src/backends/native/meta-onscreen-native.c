@@ -1550,6 +1550,8 @@ try_post_latest_swap (CoglOnscreen *onscreen)
   MetaRendererNative *renderer_native = renderer_gpu_data->renderer_native;
   MetaRenderer *renderer = META_RENDERER (renderer_native);
   MetaBackend *backend = meta_renderer_get_backend (renderer);
+  MetaBackendNative *backend_native = META_BACKEND_NATIVE (backend);
+  MetaKms *kms = meta_backend_native_get_kms (backend_native);
   MetaMonitorManager *monitor_manager =
     meta_backend_get_monitor_manager (backend);
   MetaOnscreenNative *onscreen_native = META_ONSCREEN_NATIVE (onscreen);
@@ -1564,7 +1566,8 @@ try_post_latest_swap (CoglOnscreen *onscreen)
   MetaFrameNative *frame_native;
   COGL_TRACE_SCOPED_ANCHOR (MetaRendererNativePostKmsUpdate);
 
-  if (onscreen_native->next_frame == NULL)
+  if (onscreen_native->next_frame == NULL ||
+      meta_kms_is_shutting_down (kms))
     return;
 
   power_save_mode = meta_monitor_manager_get_power_save_mode (monitor_manager);
