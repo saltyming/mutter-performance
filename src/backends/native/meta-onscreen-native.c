@@ -1567,6 +1567,7 @@ try_post_latest_swap (CoglOnscreen *onscreen)
   COGL_TRACE_SCOPED_ANCHOR (MetaRendererNativePostKmsUpdate);
 
   if (onscreen_native->next_frame == NULL ||
+      onscreen_native->view == NULL ||
       meta_kms_is_shutting_down (kms))
     return;
 
