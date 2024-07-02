@@ -1320,6 +1320,7 @@ meta_onscreen_native_swap_buffers_with_damage (CoglOnscreen  *onscreen,
   g_autoptr (MetaDrmBuffer) buffer = NULL;
   MetaKmsCrtc *kms_crtc;
   MetaKmsDevice *kms_device;
+  COGL_TRACE_SCOPED_ANCHOR (MetaRendererNativePostKmsUpdate);
 
   COGL_TRACE_BEGIN_SCOPED (MetaRendererNativeSwapBuffers,
                            "Meta::OnscreenNative::swap_buffers_with_damage()");
@@ -1373,10 +1374,7 @@ meta_onscreen_native_swap_buffers_with_damage (CoglOnscreen  *onscreen,
           g_warning ("Failed to lock front buffer on %s: %s",
                      meta_device_file_get_path (render_device_file),
                      error->message);
-
-          frame_info->flags |= COGL_FRAME_INFO_FLAG_SYMBOLIC;
-          meta_onscreen_native_notify_frame_complete (onscreen);
-          return;
+          goto swap_failed;
         }
 
       primary_gpu_fb = META_DRM_BUFFER (g_steal_pointer (&buffer_gbm));
@@ -1391,10 +1389,7 @@ meta_onscreen_native_swap_buffers_with_damage (CoglOnscreen  *onscreen,
           g_warning ("Failed to ensure KMS FB ID on %s: %s",
                      meta_device_file_get_path (render_device_file),
                      error->message);
-
-          frame_info->flags |= COGL_FRAME_INFO_FLAG_SYMBOLIC;
-          meta_onscreen_native_notify_frame_complete (onscreen);
-          return;
+          goto swap_failed;
         }
       break;
     case META_RENDERER_NATIVE_MODE_SURFACELESS:
@@ -1449,8 +1444,8 @@ meta_onscreen_native_swap_buffers_with_damage (CoglOnscreen  *onscreen,
       return;
     }
 
-  COGL_TRACE_BEGIN_SCOPED (MetaRendererNativePostKmsUpdate,
-                           "Meta::OnscreenNative::swap_buffers_with_damage#post_pending_update()");
+  COGL_TRACE_BEGIN_ANCHORED (MetaRendererNativePostKmsUpdate,
+                             "Meta::OnscreenNative::swap_buffers_with_damage#post_pending_update()");
 
   switch (renderer_gpu_data->mode)
     {
@@ -1514,6 +1509,11 @@ meta_onscreen_native_swap_buffers_with_damage (CoglOnscreen  *onscreen,
   meta_kms_device_post_update (kms_device, kms_update,
                                META_KMS_UPDATE_FLAG_NONE);
   clutter_frame_set_result (frame, CLUTTER_FRAME_RESULT_PENDING_PRESENTED);
+  return;
+
+swap_failed:
+  frame_info->flags |= COGL_FRAME_INFO_FLAG_SYMBOLIC;
+  meta_onscreen_native_notify_frame_complete (onscreen);
 }
 
 gboolean
