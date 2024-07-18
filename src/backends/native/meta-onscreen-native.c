@@ -1395,9 +1395,6 @@ meta_onscreen_native_swap_buffers_with_damage (CoglOnscreen  *onscreen,
                                  primary_gpu_fb,
                                  secondary_gpu_fb);
 
-  g_warn_if_fail (!onscreen_native->next_frame);
-  onscreen_native->next_frame = clutter_frame_ref (frame);
-
   switch (renderer_gpu_data->mode)
     {
     case META_RENDERER_NATIVE_MODE_GBM:
@@ -1421,6 +1418,9 @@ meta_onscreen_native_swap_buffers_with_damage (CoglOnscreen  *onscreen,
       break;
 #endif
     }
+
+  g_warn_if_fail (!onscreen_native->next_frame);
+  onscreen_native->next_frame = clutter_frame_ref (frame);
 
   /*
    * If we changed EGL context, cogl will have the wrong idea about what is
