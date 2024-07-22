@@ -65,3 +65,5 @@ int meta_kms_crtc_get_idx (MetaKmsCrtc *crtc);
 
 META_EXPORT_TEST
 gboolean meta_kms_crtc_is_active (MetaKmsCrtc *crtc);
+
+int64_t meta_kms_crtc_get_deadline_evasion (MetaKmsCrtc *crtc);
