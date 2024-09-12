@@ -29,6 +29,7 @@
 
 #include "backends/native/meta-onscreen-native.h"
 
+#include <glib/gstdio.h>
 #include <drm_fourcc.h>
 
 #include "backends/meta-egl-ext.h"
@@ -851,19 +852,51 @@ copy_shared_framebuffer_gpu (CoglOnscreen                         *onscreen,
   CoglFramebuffer *framebuffer = COGL_FRAMEBUFFER (onscreen);
   CoglContext *cogl_context = cogl_framebuffer_get_context (framebuffer);
   CoglDisplay *cogl_display = cogl_context_get_display (cogl_context);
+  CoglRendererEGL *cogl_renderer_egl = cogl_context->display->renderer->winsys;
   MetaRenderDevice *render_device;
-  EGLDisplay egl_display;
+  EGLDisplay egl_display = NULL;
   gboolean use_modifiers;
   MetaDeviceFile *device_file;
   MetaDrmBufferFlags flags;
   MetaDrmBufferGbm *buffer_gbm = NULL;
   struct gbm_bo *bo;
+  EGLSync primary_gpu_egl_sync = EGL_NO_SYNC;
+  EGLSync secondary_gpu_egl_sync = EGL_NO_SYNC;
+  g_autofd int primary_gpu_sync_fence = EGL_NO_NATIVE_FENCE_FD_ANDROID;
 
   COGL_TRACE_BEGIN_SCOPED (CopySharedFramebufferSecondaryGpu,
                            "copy_shared_framebuffer_gpu()");
 
   if (renderer_gpu_data->secondary.needs_explicit_sync)
-    cogl_framebuffer_finish (COGL_FRAMEBUFFER (onscreen));
+    {
+      if (!meta_egl_create_sync (egl,
+                                cogl_renderer_egl->edpy,
+                                EGL_SYNC_NATIVE_FENCE_ANDROID,
+                                NULL,
+                                &primary_gpu_egl_sync,
+                                error))
+       {
+         g_prefix_error (error, "Failed to create EGLSync on primary GPU: ");
+         return NULL;
+       }
+
+      // According to the EGL_KHR_fence_sync specification we must ensure
+      // the fence command is flushed in this context to be able to await it
+      // in another (secondary GPU context) or we risk waiting indefinitely.
+      cogl_framebuffer_flush (COGL_FRAMEBUFFER (onscreen));
+
+      primary_gpu_sync_fence =
+        meta_egl_duplicate_native_fence_fd (egl,
+                                            cogl_renderer_egl->edpy,
+                                            primary_gpu_egl_sync,
+                                            error);
+
+      if (primary_gpu_sync_fence == EGL_NO_NATIVE_FENCE_FD_ANDROID)
+        {
+          g_prefix_error (error, "Failed to duplicate EGLSync FD on primary GPU: ");
+          goto done;
+        }
+    }
 
   render_device = renderer_gpu_data->render_device;
   egl_display = meta_render_device_get_egl_display (render_device);
@@ -877,6 +910,40 @@ copy_shared_framebuffer_gpu (CoglOnscreen                         *onscreen,
     {
       g_prefix_error (error, "Failed to make current: ");
       goto done;
+    }
+
+  if (primary_gpu_sync_fence != EGL_NO_NATIVE_FENCE_FD_ANDROID)
+    {
+      EGLAttrib attribs[3];
+
+      attribs[0] = EGL_SYNC_NATIVE_FENCE_FD_ANDROID;
+      attribs[1] = primary_gpu_sync_fence;
+      attribs[2] = EGL_NONE;
+
+      if (!meta_egl_create_sync (egl,
+                                egl_display,
+                                EGL_SYNC_NATIVE_FENCE_ANDROID,
+                                attribs,
+                                &secondary_gpu_egl_sync,
+                                error))
+        {
+          g_prefix_error (error, "Failed to create EGLSync on secondary GPU: ");
+          goto done;
+        }
+
+      // eglCreateSync takes ownership of an existing fd that is passed, so
+      // don't try to clean it up twice.
+      primary_gpu_sync_fence = EGL_NO_NATIVE_FENCE_FD_ANDROID;
+
+      if (!meta_egl_wait_sync (egl,
+                               egl_display,
+                               secondary_gpu_egl_sync,
+                               0,
+                               error))
+        {
+          g_prefix_error (error, "Failed to wait for EGLSync on secondary GPU: ");
+          goto done;
+        }
     }
 
   buffer_gbm = META_DRM_BUFFER_GBM (primary_gpu_fb);
@@ -927,6 +994,20 @@ copy_shared_framebuffer_gpu (CoglOnscreen                         *onscreen,
 
 done:
   _cogl_winsys_egl_ensure_current (cogl_display);
+
+  if (primary_gpu_egl_sync != EGL_NO_SYNC &&
+      !meta_egl_destroy_sync (egl,
+                              cogl_renderer_egl->edpy,
+                              primary_gpu_egl_sync,
+                              error))
+    g_prefix_error (error, "Failed to destroy primary GPU EGLSync: ");
+
+  if (secondary_gpu_egl_sync != EGL_NO_SYNC &&
+      !meta_egl_destroy_sync (egl,
+                              egl_display,
+                              secondary_gpu_egl_sync,
+                              error))
+    g_prefix_error (error, "Failed to destroy secondary GPU EGLSync: ");
 
   return buffer_gbm ? META_DRM_BUFFER (buffer_gbm) : NULL;
 }
