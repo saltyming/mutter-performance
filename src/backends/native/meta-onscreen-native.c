@@ -854,6 +854,7 @@ copy_shared_framebuffer_gpu (CoglOnscreen                         *onscreen,
   struct gbm_bo *bo;
   EGLSync egl_sync = EGL_NO_SYNC;
   g_autofd int sync_fd = -1;
+  EGLImageKHR egl_image;
 
   COGL_TRACE_BEGIN_SCOPED (CopySharedFramebufferSecondaryGpu,
                            "copy_shared_framebuffer_gpu()");
@@ -907,11 +908,19 @@ copy_shared_framebuffer_gpu (CoglOnscreen                         *onscreen,
 
   buffer_gbm = META_DRM_BUFFER_GBM (primary_gpu_fb);
   bo = meta_drm_buffer_gbm_get_bo (buffer_gbm);
+  egl_image = meta_drm_buffer_gbm_get_native_blit_image (egl, egl_display, bo, error);
+
+  if (!egl_image)
+    {
+      g_prefix_error (error, "Failed to create EGL image from buffer object for secondary GPU: ");
+      goto done;
+    }
+
   if (!meta_renderer_native_gles3_blit_shared_bo (egl,
                                                   gles3,
                                                   egl_display,
                                                   renderer_gpu_data->secondary.egl_context,
-                                                  secondary_gpu_state->egl_surface,
+                                                  egl_image,
                                                   bo,
                                                   error))
     {
