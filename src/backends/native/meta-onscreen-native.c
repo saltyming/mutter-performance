@@ -960,6 +960,7 @@ copy_shared_framebuffer_gpu (CoglOnscreen                         *onscreen,
   MtkRectangle *blit_rectangles = NULL;
   EGLSync egl_sync = EGL_NO_SYNC;
   g_autofd int sync_fd = -1;
+  EGLImageKHR egl_image;
 
   COGL_TRACE_BEGIN_SCOPED (CopySharedFramebufferSecondaryGpu,
                            "copy_shared_framebuffer_gpu()");
@@ -1015,6 +1016,13 @@ copy_shared_framebuffer_gpu (CoglOnscreen                         *onscreen,
 
   buffer_gbm = META_DRM_BUFFER_GBM (primary_gpu_fb);
   bo = meta_drm_buffer_gbm_get_bo (buffer_gbm);
+  egl_image = meta_drm_buffer_gbm_get_native_blit_image (egl, egl_display, bo, error);
+
+  if (!egl_image)
+    {
+      g_prefix_error (error, "Failed to create EGL image from buffer object for secondary GPU: ");
+      goto done;
+    }
 
   buffer_age = get_secondary_gpu_buffer_age (secondary_gpu_state, renderer_gpu_data);
   blit_n_rectangles = calculate_secondary_gpu_damage_rectangle_count (secondary_gpu_state, buffer_age);
@@ -1063,7 +1071,7 @@ copy_shared_framebuffer_gpu (CoglOnscreen                         *onscreen,
                                                   gles3,
                                                   egl_display,
                                                   renderer_gpu_data->secondary.egl_context,
-                                                  secondary_gpu_state->egl_surface,
+                                                  egl_image,
                                                   bo,
                                                   blit_rectangles,
                                                   blit_n_rectangles,
