@@ -102,6 +102,7 @@ struct _MetaOnscreenNative
   MetaCrtc *crtc;
 
   MetaOnscreenNativeSecondaryGpuState *secondary_gpu_state;
+  gboolean secondary_gpu_used;
 
   ClutterFrame *presented_frame;
   ClutterFrame *next_frame;
@@ -1350,14 +1351,12 @@ meta_onscreen_native_swap_buffers_with_damage (CoglOnscreen  *onscreen,
   MetaMonitorManager *monitor_manager =
     meta_backend_get_monitor_manager (backend);
   MetaOnscreenNative *onscreen_native = META_ONSCREEN_NATIVE (onscreen);
-  MetaOnscreenNativeSecondaryGpuState *secondary_gpu_state;
   MetaGpuKms *render_gpu = onscreen_native->render_gpu;
   MetaDeviceFile *render_device_file;
   ClutterFrame *frame = user_data;
   MetaFrameNative *frame_native = meta_frame_native_from_frame (frame);
   MetaKmsUpdate *kms_update;
   CoglOnscreenClass *parent_class;
-  gboolean secondary_gpu_used = FALSE;
   MetaPowerSave power_save_mode;
   g_autoptr (GError) error = NULL;
   MetaDrmBufferFlags buffer_flags;
@@ -1378,20 +1377,7 @@ meta_onscreen_native_swap_buffers_with_damage (CoglOnscreen  *onscreen,
                                                  rectangles,
                                                  n_rectangles);
 
-  secondary_gpu_state = onscreen_native->secondary_gpu_state;
-  if (secondary_gpu_state)
-    {
-      MetaRendererNativeGpuData *secondary_gpu_data;
-
-      secondary_gpu_data =
-        meta_renderer_native_get_gpu_data (renderer_native,
-                                           secondary_gpu_state->gpu_kms);
-      secondary_gpu_used =
-        secondary_gpu_data->secondary.copy_mode ==
-        META_SHARED_FRAMEBUFFER_COPY_MODE_SECONDARY_GPU;
-    }
-
-  if (!secondary_gpu_used)
+  if (!onscreen_native->secondary_gpu_used)
     cogl_onscreen_egl_maybe_create_timestamp_query (onscreen, frame_info);
 
   parent_class = COGL_ONSCREEN_CLASS (meta_onscreen_native_parent_class);
@@ -1552,7 +1538,7 @@ meta_onscreen_native_swap_buffers_with_damage (CoglOnscreen  *onscreen,
 
   kms_update = meta_frame_native_steal_kms_update (frame_native);
 
-  if (!secondary_gpu_used)
+  if (!onscreen_native->secondary_gpu_used)
     {
       int sync_fd;
 
@@ -2723,7 +2709,10 @@ init_secondary_gpu_state (MetaRendererNative  *renderer_native,
                                                   onscreen,
                                                   renderer_gpu_data,
                                                   &local_error))
-        return TRUE;
+        {
+          onscreen_native->secondary_gpu_used = TRUE;
+          return TRUE;
+        }
 
       g_warning ("Secondary GPU initialization failed (%s). "
                  "Falling back to GPU-less mode instead, so the "
